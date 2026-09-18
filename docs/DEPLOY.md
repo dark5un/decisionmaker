@@ -1,9 +1,8 @@
 # Deploying Decision-Maker serve (rootless Podman, GPU-pinned)
 
-Phase 4 is CODE-COMPLETE and verified at the HTTP layer (tests/test_server.py,
-fake engine, no GPU). The remaining work needs a real model + container, which
-by the plan's operating rules are yours to run. Nothing below mutates your
-system unless you run it.
+Phase 4 is CODE-COMPLETE and verified live at the HTTP layer (tests + the running
+service on this box). These steps build the container and install the quadlet;
+nothing below mutates your system unless you run it.
 
 Verify first: the GPU has to be real and live, never a cached map.
 ```bash
@@ -27,7 +26,7 @@ systemctl --user daemon-reload
 systemctl --user start decisionmaker-serve
 ```
 
-The first start downloads `Qwen/Qwen3-0.6B-Instruct` (rev
+The first start downloads the pinned model once (`Qwen/Qwen3-0.6B`, rev
 `c1899de289a04d12100db370d81485cdf75e47ca`, ~1.2 GB) into
 `~/.cache/huggingface`, then loads it once and serves. Later starts are load-once,
 warm. Give it up to `TimeoutStartSec=1800` on first boot (image + model).
@@ -73,6 +72,12 @@ systemctl --user daemon-reload && systemctl --user restart decisionmaker-serve
 - Mismatched repo volume shows stale code → the repo volume is read-only `:ro`;
   rebuild time you `podman build` only, code changes are live via the mount.
 
-## Train (Phase 5 — not yet active)
-`deploy/decisionmaker-train.container` is scaffolding and intentionally exits 1
-until Phase 5 defines `scripts/train.py`. Do not start it.
+## Train (Phase 5 — live)
+Fine-tunes the decision head against `data/seed.jsonl` and runs the ECE gate.
+`deploy/decisionmaker-train.container` is the real entrypoint (`python -m train.train`),
+writing a frozen run dir under `runs/` (checkpoint + config + predictions + ECE report).
+The gate exit code is 0 on pass, 2 on fail; results are in `docs/CALIBRATION.md`.
+
+```bash
+systemctl --user start decisionmaker-train       # one-shot; check with --user status/logs
+```

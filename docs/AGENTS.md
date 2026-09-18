@@ -1,7 +1,8 @@
 # AGENTS.md — resume-anywhere handoff (written 2026-09-18)
 
-Read PLAN.md too. This file is the authoritative "where we are / what's next"
-for a fresh agent. Everything here was VERIFIED by running it (not assumed).
+This file is the authoritative "where we are / what's next" for a fresh agent.
+Everything here was VERIFIED by running it (not assumed). All phases through 9
+are done; Phase 10 (packaging) is deliberately parked — see "Parked work" below.
 
 ## Quick start (5 min)
 ```bash
@@ -34,7 +35,7 @@ DecisionHead/Model), `server/src/app.py` (FastAPI), `spec/openapi.yaml`,
   on the BACKBONE device and the head must be `.to(cuda)` (device mismatch); the
   first GPU request incurs ~14s CUDA warmup, steady-state ~25ms.
 
-## Phase-by-phase status (see PLAN.md checklist)
+## Phase-by-phase status
 - **Phase 1 research** — DONE. `docs/architecture.md` (primitives, calibration theory,
   container GPU, SDK decision).
 - **Phase 2 contract** — DONE. `spec/openapi.yaml` (3.1), `docs/API.md`,
@@ -69,15 +70,15 @@ DecisionHead/Model), `server/src/app.py` (FastAPI), `spec/openapi.yaml`,
   unsorted structured-object state and expect SDK==curl byte-for-byte.
 - **Benchmark** — DONE (real). `scripts/benchmark.py` + `make bench`: warm p50=23.6ms
   p95=25.1ms mean=23.9ms; ~43 req/s @8-concurrency; correctness gate OK (live 4070 Ti).
-- **Phase 9 docs** — DONE (arch/API/DATA/DEPLOY/AGENTS). Plan checklist updated.
-- **Phase 10 packaging fork** — not started. Spike: constrained-decode llama.cpp+Go vs
-  head-based ECE on the same eval set → decide Path A (sidecar) vs Path B (embedded GGUF).
+- **Phase 9 docs** — DONE (arch/API/DATA/DEPLOY/AGENTS/README + LICENSE).
+- **Phase 10 packaging fork** — PARKED (deliberately). Not pursued; see "Parked work".
 
-## Next-agent TODO (in order)
-1. (Phase 10) The packaging spike — constrained-decode llama.cpp+Go vs head-based ECE on the
-   same eval set; decide Path A (sidecar) vs Path B (embedded GGUF).
-2. (Phase 9 tail) resume-anywhere run: `make test`; the calibration/pattern skill update
-   (offer to user).
+## Parked work
+- **Phase 10 (packaging fork)** — deliberately parked; not an open gate. The repo
+  ships as the working HTTP service + SDKs (Phase 4 → 8 done and live). Decision
+  not to pursue either the embedded-GGUF Go binary or the sidecar packaging.
+- Phase 9 tail (resume-anywhere run: `make test`; calibration/pattern skill update)
+  remains a to-offer when convenient.
 
 ## Commands that matter
 - Tests: `.venv/bin/python -m pytest tests/ -q`
