@@ -1,0 +1,17 @@
+# data dir is gitignored: raw jsonl, splits, checkpoints
+data/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# model caches
+*.safetensors
+*.gguf
+runs/
+
+# build artifacts (SDK)
+target/
+Cargo.lock

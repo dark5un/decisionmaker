@@ -1,0 +1,395 @@
+openapi: 3.1.0
+info:
+  title: Decision-Maker Service
+  version: 0.1.0
+  description: >
+    A local, containerized decision engine: evaluates {state, questions} and returns
+    calibrated per-candidate probability distributions in ONE forward pass, served
+    over HTTP. Own contract (Choice / Boolean / Score primitives); see docs/architecture.md.
+    Versioned: never break wire compat without a new version (/v2/...).
+servers:
+  - url: http://127.0.0.1:8090
+    description: local rootless Podman (default; see deploy/)
+
+paths:
+  /v1/decisionmaker:
+    post:
+      operationId: evaluate
+      summary: Evaluate a state against typed questions; one forward pass per state.
+      tags: [decisionmaker]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionMakerRequest'
+      responses:
+        '200':
+          description: One typed answer per question, keyed by the same qid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionMakerResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/NotReady'
+
+  /health:
+    get:
+      operationId: health
+      summary: Liveness/readiness. 200 only when the model is loaded once.
+      responses:
+        '200':
+          description: Ready (model loaded, warm).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          $ref: '#/components/responses/NotReady'
+
+components:
+  responses:
+    BadRequest:
+      description: Unparseable request body (malformed JSON), not a semantic error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: The request failed contract validation; details name the field.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Rate limited; retry with exponential backoff.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: >
+        Engine produced an invalid result (non-finite logits, probabilities not
+        summing to 1, a rejected candidate that passed validation). TYPED, not a
+        generic 500: body carries error.type='internal' so clients can
+        distinguish this from a client-side 422.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotReady:
+      description: Model not loaded yet; caller should back off and re-check /health.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    # ---------- Identifiers ----------
+    NonEmptyString:
+      type: string
+      minLength: 1
+      description: Must be a non-empty string.
+
+    StructuredText:
+      description: >
+        Any of string / object / array / null. All question fields accept
+        structured entries (labels, criteria) so the model sees labeled JSON
+        rather than a flattened template.
+      oneOf:
+        - type: string
+        - type: object
+        - type: array
+          items: {}
+        - type: 'null'
+
+    # ---------- State ----------
+    State:
+      description: >
+        What the questions are about: a plain string (non-empty), or structured
+        data (object / array) such as records, chat logs, or app state. Must be
+        non-empty. Serialized as-is (JSON for structured) into the model leaves.
+      oneOf:
+        - type: string
+          minLength: 1
+        - type: object
+        - type: array
+          minItems: 1
+          items: {}
+
+    # ---------- Questions (oneOf by type) ----------
+    Question:
+      type: object
+      description: >
+        A typed question. Discriminant is `type`. `instructions` is optional on
+        all three types. The qid (map key) is never sent to the model and never
+        part of inference — answers come back under the same key.
+      discriminator:
+        propertyName: type
+        mapping:
+          boolean: '#/components/schemas/BooleanQuestion'
+          choice: '#/components/schemas/ChoiceQuestion'
+          score: '#/components/schemas/ScoreQuestion'
+      properties:
+        type:
+          type: string
+      oneOf:
+        - $ref: '#/components/schemas/BooleanQuestion'
+        - $ref: '#/components/schemas/ChoiceQuestion'
+        - $ref: '#/components/schemas/ScoreQuestion'
+      required: [type]
+
+    BooleanQuestion:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [boolean]
+        instructions:
+          $ref: '#/components/schemas/StructuredText'
+        criteria:
+          type: object
+          description: >
+            Optional {true, false} descriptions of what a yes and a no mean.
+            May contain only these two keys; both optional.
+          properties:
+            'true':
+              $ref: '#/components/schemas/StructuredText'
+            'false':
+              $ref: '#/components/schemas/StructuredText'
+          additionalProperties: false
+
+    ChoiceQuestion:
+      type: object
+      required: [type, criteria]
+      properties:
+        type:
+          type: string
+          enum: [choice]
+        instructions:
+          $ref: '#/components/schemas/StructuredText'
+        criteria:
+          type: object
+          description: >
+            Map of option-key -> description (or null when the key speaks for
+            itself). Order PRESERVED from the request and passed to the model
+            unchanged. 2..255 options (live-verified: 256 -> 400).
+          minProperties: 2
+          maxProperties: 255
+          additionalProperties:
+            $ref: '#/components/schemas/StructuredText'
+
+    ScoreQuestion:
+      type: object
+      required: [type, criteria]
+      properties:
+        type:
+          type: string
+          enum: [score]
+        instructions:
+          $ref: '#/components/schemas/StructuredText'
+        criteria:
+          type: array
+          description: >
+            Ordered array of level descriptions, LOW to HIGH. The model must
+            infer the ordering from the descriptions only (ordinal index or
+            adjacent-level text is NEVER injected into leaves). 2..10 levels.
+          minItems: 2
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/StructuredText'
+
+    # ---------- Request ----------
+    DecisionMakerRequest:
+      type: object
+      required: [state, questions]
+      properties:
+        state:
+          $ref: '#/components/schemas/State'
+        model:
+          type: string
+          description: >
+            Optional; selects the pinned model revision. If omitted, the
+            server's default (Qwen3-0.6B instruct, revision
+            c1899de289a04d12100db370d81485cdf75e47ca) is used. Unknown model ->
+            typed 422.
+        questions:
+          type: object
+          description: >
+            Map of qid -> Question. Answers come back under the same qid. Each
+            qid is a non-empty string and is NEVER sent to the model or used in
+            inference (qid-invariance invariant). At least one question required.
+          minProperties: 1
+          additionalProperties:
+            $ref: '#/components/schemas/Question'
+
+    # ---------- Answers (oneOf by type) ----------
+    Answer:
+      type: object
+      description: >
+        One answer per question, under the same qid. `type` matches the
+        question type. Boolean carries NO confidence (a confident no and a
+        confident yes are equally confident); Choice and Score carry
+        confidence = peakedness of the returned distribution.
+      discriminator:
+        propertyName: type
+        mapping:
+          boolean: '#/components/schemas/BooleanAnswer'
+          choice: '#/components/schemas/ChoiceAnswer'
+          score: '#/components/schemas/ScoreAnswer'
+      properties:
+        type:
+          type: string
+      oneOf:
+        - $ref: '#/components/schemas/BooleanAnswer'
+        - $ref: '#/components/schemas/ChoiceAnswer'
+        - $ref: '#/components/schemas/ScoreAnswer'
+      required: [type]
+
+    BooleanAnswer:
+      type: object
+      required: [type, boolean]
+      properties:
+        type:
+          type: string
+          enum: [boolean]
+        boolean:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Probability that the answer is YES (or the statement is true).
+
+    ChoiceAnswer:
+      type: object
+      required: [type, choice, probabilities, confidence]
+      properties:
+        type:
+          type: string
+          enum: [choice]
+        choice:
+          type: string
+          description: The highest-probability option key (as sent in criteria).
+        probabilities:
+          type: object
+          description: 'Every option key -> probability; values sum to 1 (enforced).'
+          additionalProperties:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 1
+        confidence:
+          $ref: '#/components/schemas/Confidence'
+
+    ScoreAnswer:
+      type: object
+      required: [type, score, legend, probabilities, confidence]
+      properties:
+        type:
+          type: string
+          enum: [score]
+        score:
+          type: number
+          format: double
+          description: |
+            Probability-weighted answer = sum(i * p_i) over level indices i.
+            Fractional (can land between levels). Uniform over K levels ->
+            (K-1)/2.
+        legend:
+          type: object
+          description: 'Level index (string key, same as probabilities) -> description.'
+          additionalProperties:
+            type: string
+        probabilities:
+          type: object
+          description: 'Level index (string key) -> probability; values sum to 1 (enforced).'
+          additionalProperties:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 1
+        confidence:
+          $ref: '#/components/schemas/Confidence'
+
+    Confidence:
+      type: number
+      format: double
+      minimum: 0
+      maximum: 1
+      description: >
+        How peaked the returned distribution is on its winner:
+        0 = torn between options, 1 = one option dominates. It is a property of
+        the returned distribution, NOT "how likely this is right" and NOT a
+        calibration guarantee. Use it as a GATE (act / review / escalate), not
+        as an absolute correctness probability. Boolean has no confidence.
+
+    # ---------- Response ----------
+    DecisionMakerResponse:
+      type: object
+      required: [model, answers, usage]
+      properties:
+        model:
+          type: string
+          description: The model that performed the evaluation (pinned revision).
+        answers:
+          type: object
+          description: 'One Answer per question, keyed by the same qid as the request.'
+          additionalProperties:
+            $ref: '#/components/schemas/Answer'
+        usage:
+          $ref: '#/components/schemas/Usage'
+
+    Usage:
+      type: object
+      required: [input_tokens, output_tokens]
+      properties:
+        input_tokens:
+          type: integer
+          minimum: 0
+        output_tokens:
+          type: integer
+          minimum: 0
+
+    # ---------- Health & Errors ----------
+    Health:
+      type: object
+      required: [status, model]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        model:
+          type: string
+        uptime_seconds:
+          type: number
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [type, message]
+          properties:
+            type:
+              type: string
+              enum: [validation, internal, rate_limit, overloaded, not_ready]
+              description: >
+                Typed failure so clients can distinguish a client-side contract
+                violation (validation) from a server-side engine malfunction
+                (internal). NOT a generic 500 with no shape.
+            message:
+              type: string
+            details:
+              description: Field-level validation pointers (present on 422).
+              type: object
+              additionalProperties: true

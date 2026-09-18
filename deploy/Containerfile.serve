@@ -1,0 +1,35 @@
+# Decision-Maker serve image.
+# Build (handoff, ~2-3 GB download / several minutes):
+#   podman build -f deploy/Containerfile.serve -t decisionmaker-serve:local .
+#
+# Runtime: rootless Podman + nvidia-container-toolkit (CDI). GPU is made visible
+# by the quadlet's AddDevice + CUDA_VISIBLE_DEVICES, NOT by trusting a cached map.
+# FROM image verified 2026-09-18: newest pytorch/pytorch cudnn9 runtime with a
+# CUDA that supports the RTX 5090 (Blackwell, sm_120). sm_120 REQUIRES CUDA >= 12.8,
+# so older bases (e.g. cuda12.4) will not start a device on this box. Full list of
+# tags observed: see the registry; 2.9.1-cuda12.8-cudnn9-runtime is the newest.
+FROM docker.io/pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
+
+WORKDIR /app
+
+# Python runtime deps for the engine. torch + its CUDA runtime come from the base
+# image above; only the small extras are installed here. Per project convention,
+# versions are resolved by the package tool (pip/uv) at build time — no
+# hand-pinned versions here.
+RUN pip install --no-cache-dir \
+        "transformers" \
+        "safetensors" \
+        "fastapi" \
+        "uvicorn[standard]"
+
+# The engine + HTTP layer and the one-entrypoint runner.
+COPY server/ server/
+COPY scripts/run_server.py scripts/run_server.py
+
+# Repo root on the path so `server.src.*` resolves (namespace layout).
+ENV PYTHONPATH=/app
+ENV HF_HOME=/root/.cache/huggingface
+
+# The model is downloaded ONCE into the HF cache volume on the first start,
+# then loaded from disk on every boot (load-once, warm).
+CMD ["python", "scripts/run_server.py"]

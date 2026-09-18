@@ -1,0 +1,4 @@
+# Decision-Maker shared network (podman quadlet). Please name it distinctly from any
+# existing ai.network. To use another subnet, adjust Subnet below.
+[Network]
+Subnet=10.90.2.0/24

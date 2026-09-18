@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decisionmaker"
+version = "0.1.0"
+description = "Decision-Maker decision engine + HTTP service"
+requires-python = ">=3.11"
+# Packages listed by NAME ONLY; versions are resolved by the tool (uv/uv.lock
+# for native runs, pip in the container image). torch ships in the container
+# base image (docker.io/pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime), which
+# is the real pin for hardware support (RTX 5090 Blackwell sm_120).
+dependencies = [
+    "torch",
+    "transformers",
+    "safetensors",
+    "fastapi",
+    "uvicorn[standard]",
+]
+
+[tool.setuptools]
+# Source modules live under server/src and are imported as `server.src.*`
+# via the repo root on PYTHONPATH (namespace-package layout). Installed wheels
+# are not required for the local container, which mounts the repo.
+packages = ["server.src"]

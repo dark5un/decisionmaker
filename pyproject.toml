@@ -1,0 +1,24 @@
+# Repo dev/tooling project. This file lists packages by NAME ONLY — versions are
+# resolved by uv and pinned in uv.lock (run `uv lock` then `uv sync`). Refine
+# versions by editing the lock's constraints, not by hand-pinning here.
+[project]
+name = "decisionmaker-repo"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    # test + spec tooling
+    "pytest",
+    "jsonschema",
+    "openapi-spec-validator",
+    "PyYAML",
+    # server runtime, needed here for the FastAPI TestClient (tests/test_server.py)
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+]
+
+[tool.uv]
+package = false

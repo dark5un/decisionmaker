@@ -1,0 +1,38 @@
+{
+  "state": {
+    "ticket": {
+      "sender": { "display_name": "Acme Billing", "email": "noreply@acme.example" },
+      "from_domain": "acme.example",
+      "claims": ["Your invoice is overdue", "Pay within 48 hours"],
+      "attachments": 1
+    }
+  },
+  "questions": {
+    "sender_spoof": {
+      "type": "boolean",
+      "instructions": {
+        "question": "Does the claimed sender identity conflict with the sending domain?",
+        "compare": ["ticket.sender.display_name", "ticket.sender.email", "ticket.from_domain"],
+        "focus": "Compare the named organization with the email domain."
+      }
+    },
+    "disposition": {
+      "type": "choice",
+      "instructions": "Classify this message at the top level.",
+      "criteria": {
+        "phishing": "Attempts to steal credentials or install malware",
+        "billing_scam": "Fake invoice or payment demand",
+        "legitimate": "Genuine commercial or personal mail",
+        "other": null
+      }
+    },
+    "severity": {
+      "type": "score",
+      "instructions": "Rate the risk presented by this email.",
+      "criteria": [
+        { "label": "Low", "description": "Cosmetic; no functional impact" },
+        { "label": "High", "description": "Blocking; no workaround" }
+      ]
+    }
+  }
+}

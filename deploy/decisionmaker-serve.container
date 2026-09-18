@@ -1,0 +1,64 @@
+# Decision-Maker serve quadlet — GPU decision engine, load-once warm.
+#
+# FOLLOW THE HOST CONVENTION (see ~/.config/containers/systemd/llama-cpp-main.container):
+#   AddDevice=nvidia.com/gpu=all  +  Environment=CUDA_VISIBLE_DEVICES=GPU-<uuid>
+# /dev/nvidiaN MINORS FLIP ACROSS REBOOTS. Do NOT trust this file's UUID:
+#   run  scripts/verify_gpu.sh  on this box and pin the CURRENT id of the GPU you want.
+# The values below use the RTX 5090 observed 2026-09-18; re-verify before install.
+#
+# Install (handoff):
+#   cp deploy/decisionmaker.network deploy/decisionmaker-serve.container \
+#        deploy/healthcheck.sh ~/.config/containers/systemd/
+#   chmod +x ~/.config/containers/systemd/healthcheck.sh
+#   systemctl --user daemon-reload
+#   systemctl --user start decisionmaker-serve
+#
+[Unit]
+Description=Decision-Maker serve (Qwen3-0.6B decision engine)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=decisionmaker-serve
+Image=localhost/decisionmaker-serve:local
+
+# GPU assignment: NVIDIA GeForce RTX 4070 Ti. VERIFY live first.
+# 2026-09-18 live check: the RTX 5090 is NOT idle — llama-server holds ~26.6 GiB
+# of it (98% full), so decisionmaker is pinned to the 4070 Ti (12 GB, ~8 GB free),
+# which comfortably fits the 0.6B fp32 model. Re-check with scripts/verify_gpu.sh.
+AddDevice=nvidia.com/gpu=all
+# GPU selection is configured ONCE in deploy/gpu.env (DECISIONMAKER_SERVE_GPU_DEVICES).
+# run_server.py maps that variable to CUDA_VISIBLE_DEVICES before importing torch.
+EnvironmentFile=%h/workspace/decisionmaker/deploy/gpu.env
+Environment=DECISIONMAKER_PORT=8090
+Environment=DECISIONMAKER_TEMPERATURE=1.0
+
+# Container runs as root (pytorch base); rootless podman maps container-root to
+# the host user for file I/O, which is how the model cache stays user-writable.
+# NOTE: UserNS=keep-id is DELIBERATELY absent here — it mapped container-root to
+# a host uid that could NOT write the mounted HF cache (PermissionError on the
+# token file). Other quadlets on this host use keep-id but only mount read-only volumes.
+SecurityLabelDisable=true
+
+# Network + port: reachable from the host at http://127.0.0.1:8090
+Network=decisionmaker.network
+PublishPort=127.0.0.1:8090:8090
+
+# Read-only repo, writable HF model cache (download once, load-once thereafter).
+Volume=%h/workspace/decisionmaker:/app:ro,Z
+Volume=%h/.cache/huggingface:/root/.cache/huggingface:Z
+WorkingDir=/app
+
+# Health = /health green (model loaded once).
+HealthCmd=/app/deploy/healthcheck.sh
+HealthInterval=30s
+HealthTimeout=5s
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=1800
+TimeoutStopSec=120
+
+[Install]
+WantedBy=default.target

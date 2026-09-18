@@ -1,0 +1,8 @@
+{
+  "state": ["row-a", "row-b"],
+  "questions": {
+    "flagged": { "type": "boolean", "instructions": "Is this row flagged for review?" },
+    "bucket": { "type": "choice", "criteria": { "keep": "Keep in primary set", "quarantine": "Move to quarantine" } },
+    "priority": { "type": "score", "criteria": ["Low", "High"] }
+  }
+}

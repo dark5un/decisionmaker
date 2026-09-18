@@ -1,0 +1,42 @@
+# Decision-Maker TRAIN quadlet — fine-tune the decision head + ECE calibration.
+#
+# Runs train/train.py for real (head warm-start, or --finetune for full model).
+# It writes a frozen run dir (checkpoint + config + train log + per-split
+# predictions + ECE report) under /app/runs/.
+#
+# GPU handling: training runs on the RTX 5090 (32 GB) — the largest free card.
+# The serve container uses the 4070 Ti; the 5090 was previously held by
+# llama-server but is now free. If the 4070 Ti is the only free card, switch the
+# UUID below (verify live with scripts/verify_gpu.sh — minors/UUIDs can flip).
+#   current: 5090 = GPU-34466eba-2642-c31a-2e44-6451b6a6b425
+#            4070 Ti = GPU-58e5f98d-a4f4-4cff-a9fc-16df0667d2fd
+[Unit]
+Description=Decision-Maker train (fine-tune + ECE calibration)
+After=decisionmaker-serve.service
+
+[Container]
+ContainerName=decisionmaker-train
+Image=localhost/decisionmaker-serve:local
+
+AddDevice=nvidia.com/gpu=all
+# GPU selection is configured ONCE in deploy/gpu.env (DECISIONMAKER_TRAIN_GPU_DEVICES).
+# Passed through Exec (systemd expands ${VAR} in Exec=) into --gpu; train.py maps
+# it before importing torch.
+EnvironmentFile=%h/workspace/decisionmaker/deploy/gpu.env
+SecurityLabelDisable=true
+# NOTE: UserNS=keep-id is DELIBERATELY ABSENT (same as serve) — keep-id mapped
+# container-root to a host uid that could NOT write the mounted HF cache
+# (PermissionError). Rootless podman maps container-root to the host user for
+# file I/O; that is the proven-working setup here.
+
+Volume=%h/workspace/decisionmaker:/app:Z
+Volume=%h/.cache/huggingface:/root/.cache/huggingface:Z
+WorkingDir=/app
+# Real entrypoint: fine-tune the head on the seed data; edit args for other
+# losses/seeds. ECE gate on test+ood decides the exit code (0 pass, 2 fail).
+Exec=python -m train.train --data data/seed.jsonl --run-dir runs/seed_ce --loss ce --epochs 3 --gpu=${DECISIONMAKER_TRAIN_GPU_DEVICES}
+
+[Service]
+Type=oneshot
+[Install]
+WantedBy=default.target
