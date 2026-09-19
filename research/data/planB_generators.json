@@ -1,0 +1,20 @@
+{
+  "program": "research/generators/planB_generator.py",
+  "program_sha256": "49546961b63f7e9fbf4f068d897661cd5c6397a828937f039984bdebcd2595e3",
+  "data_sha256": "sha256:c700ed427766bc61eb602ec81277817650d1700e87a435647b9344f01b731c80",
+  "seed": 23,
+  "per_split": 60,
+  "ood_families": 6,
+  "conf_range": [
+    0.7,
+    0.9
+  ],
+  "splits": [
+    "train",
+    "dev",
+    "calibration",
+    "test",
+    "ood"
+  ],
+  "matched_run": "research/data/planB_train_matched.jsonl (sha256:d2b9436553feb95553dedefee93cfe2228625c8b8f6b359dfe0bf9fc3b24dc0d)"
+}
