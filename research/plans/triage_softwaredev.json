@@ -1,0 +1,26 @@
+{
+  "decision-dense": [
+    "cross-language-sdk-parity",
+    "decisionmaker",
+    "hermes-agent-skill-authoring",
+    "inspecting-hermes-desktop-dom",
+    "neovim-ai-coding",
+    "podman-quadlet-deploy",
+    "requesting-code-review"
+  ],
+  "judgment-prose": [
+    "dogfood",
+    "github",
+    "go-agent-landscape",
+    "node-inspect-debugger",
+    "python-debugpy",
+    "repo-docs-authoring",
+    "simplify-code",
+    "spike",
+    "systematic-debugging",
+    "test-driven-development"
+  ],
+  "chore": [
+    "codebase-inspection"
+  ]
+}

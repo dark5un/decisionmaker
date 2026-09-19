@@ -1,0 +1,5 @@
+{
+  "decision-dense": ["codex", "computer-use", "xurl"],
+  "judgment-prose": ["claude-code", "hermes-agent", "email-inbox-triage"],
+  "chore": ["hermes-sidecar", "opencode", "himalaya"]
+}

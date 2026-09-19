@@ -1,0 +1,19 @@
+{
+  "decision-dense": [
+    "architecture-diagram",
+    "baoyu-infographic",
+    "design-md",
+    "hugo-blog"
+  ],
+  "judgment-prose": [
+    "ascii-video",
+    "claude-design",
+    "humanizer",
+    "manim-video",
+    "p5js",
+    "songwriting-and-ai-music"
+  ],
+  "chore": [
+    "popular-web-designs"
+  ]
+}

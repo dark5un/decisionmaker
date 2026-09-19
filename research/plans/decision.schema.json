@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "decisionmaker-research/decision.schema.json",
+  "title": "Decision-Maker Rulebook decision table",
+  "description": "Fixed schema for all three gold-source plans (A/B/C). One decision-table JSON per decision point. Every rule's condition references fields of input_schema; every outcome label is a member of the question's criteria set (or the special is_default rule carries outcome from within criteria). Each table carries a canonical_hash so a run is byte-reproducible.",
+  "type": "object",
+  "required": ["skill", "decision_id", "source", "input_schema", "question", "rules", "canonical_hash"],
+  "properties": {
+    "skill": { "type": "string", "description": "Skill directory basename this decision belongs to." },
+    "decision_id": { "type": "string", "description": "Unique identifier for this decision point within the skill." },
+    "source": { "type": "string", "description": "Verbatim slice / span of the SKILL.md the decision was compiled from, e.g. 'SKILL.md#L77' or an exact quoted span." },
+    "input_schema": {
+      "type": "object",
+      "required": ["required", "properties"],
+      "properties": {
+        "required": { "type": "array", "items": { "type": "string" } },
+        "properties": {
+          "type": "object",
+          "description": "Map field -> {type: boolean|number|string|enum, enum?: [...], default?}.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "enum": ["boolean", "number", "string"] },
+              "enum": { "type": "array", "items": { "type": "string" } },
+              "default": {}
+            }
+          }
+        }
+      }
+    },
+    "question": {
+      "type": "object",
+      "required": ["type", "criteria"],
+      "properties": {
+        "type": { "enum": ["boolean", "choice", "score"] },
+        "instructions": { "type": "string" },
+        "criteria": {
+          "description": "For choice: map candidate-id -> label string (keys = outcome labels in rules). For boolean: map with 'true'/'false' keys. For score: array of band labels (rules use stringified index)."
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "Ordered rules (matched by descending priority; first match wins). At most one rule may be is_default:true (condition null) — the 'no rule matched -> review/escalate' honest low-confidence fallback.",
+      "items": {
+        "type": "object",
+        "required": ["id", "priority", "condition", "outcome"],
+        "properties": {
+          "id": { "type": "string" },
+          "priority": { "type": "number" },
+          "condition": {
+            "description": "null for the default rule, else a nested boolean expression tree.",
+            "anyOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "properties": {
+                  "all": { "type": "array", "items": { "$ref": "#/definitions/condition" } },
+                  "any": { "type": "array", "items": { "$ref": "#/definitions/condition" } },
+                  "not": { "$ref": "#/definitions/condition" },
+                  "field": { "type": "string" },
+                  "operator": { "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "in"] },
+                  "value": {}
+                }
+              }
+            ]
+          },
+          "outcome": { "type": "string", "description": "Labfn must be a member of the question's criteria set." },
+          "is_default": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "canonical_hash": { "type": "string", "description": "sha256 of the canonical serialization of this decision table (computed on commit)." },
+    "verification": {
+      "type": "string",
+      "description": "Plan-A per-rule verification label: 'verified' | 'incomplete' (human review).",
+      "enum": ["verified", "incomplete"]
+    }
+  },
+  "definitions": {
+    "condition": {
+      "type": "object",
+      "properties": {
+        "all": { "type": "array", "items": { "$ref": "#/definitions/condition" } },
+        "any": { "type": "array", "items": { "$ref": "#/definitions/condition" } },
+        "not": { "$ref": "#/definitions/condition" },
+        "field": { "type": "string" },
+        "operator": { "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "in"] },
+        "value": {}
+      }
+    }
+  }
+}
