@@ -11,6 +11,7 @@ Containerfile) makes `server.src.*` importable, so all imports sit at module top
 from __future__ import annotations
 
 import os
+import json
 
 # Map the role GPU variable (deploy/gpu.env -> DECISIONMAKER_SERVE_GPU_DEVICES) to
 # CUDA_VISIBLE_DEVICES BEFORE torch is imported (torch caches CUDA_VISIBLE_DEVICES
@@ -30,9 +31,12 @@ from server.src.model import DecisionHead
 
 
 def build_engine():
+    # Temperature precedence: explicit DECISIONMAKER_TEMPERATURE override > fitted
+    # T from temperature.json beside the head checkpoint > 1.0 (no sharpening).
+    temp_env = os.environ.get("DECISIONMAKER_TEMPERATURE")
     config = EngineConfig(
         max_length=int(os.environ.get("DECISIONMAKER_MAX_LENGTH", "512")),
-        temperature=float(os.environ.get("DECISIONMAKER_TEMPERATURE", "1.0")),
+        temperature=float(temp_env) if temp_env else 1.0,
         model=os.environ.get("DECISIONMAKER_MODEL", "Qwen/Qwen3-0.6B"),
         revision=os.environ.get("DECISIONMAKER_REVISION", "c1899de289a04d12100db370d81485cdf75e47ca"),
     )
@@ -56,6 +60,29 @@ def build_engine():
     # Move the head to the SAME device as the backbone — a CPU head against a
     # CUDA backbone fails during embedding (device mismatch).
     head.to(torch.device("cuda"))
+    # Load the FINE-TUNED head (Phase 5) if available. The backbone is byte-frozen
+    # (head-only fine-tune) and served fresh from the HF pin above, so ONLY the
+    # head weights are loaded. Without this the head is random-init (std=0.02) and
+    # every /v1/decisionmaker answer collapses to ~uniform probabilities.
+    head_checkpoint = os.environ.get(
+        "DECISIONMAKER_HEAD_CHECKPOINT", "/app/runs/seed_ce/checkpoint.pt"
+    )
+    if os.path.isfile(head_checkpoint):
+        ckpt = torch.load(head_checkpoint, weights_only=False)
+        head.load_state_dict(ckpt["head"])
+        print(f"head loaded from {head_checkpoint}", flush=True)
+        # Auto-apply the fitted post-hoc temperature for this head if present.
+        temp_json = os.path.join(os.path.dirname(head_checkpoint), "temperature.json")
+        if not temp_env and os.path.isfile(temp_json):
+            fitted = float(json.load(open(temp_json))["T"])
+            config.temperature = fitted
+            print(f"fitted temperature loaded from {temp_json}: T={fitted}", flush=True)
+    else:
+        print(
+            f"WARNING: head checkpoint {head_checkpoint} not found; serving "
+            f"random-init head (responses will be ~uniform)",
+            flush=True,
+        )
     return DecisionEngine(tokenizer, config, backbone=backbone, head=head), config
 
 

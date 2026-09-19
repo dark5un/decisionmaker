@@ -81,3 +81,34 @@ The gate exit code is 0 on pass, 2 on fail; results are in `docs/CALIBRATION.md`
 ```bash
 systemctl --user start decisionmaker-train       # one-shot; check with --user status/logs
 ```
+
+## Serve the TRAINED head (do not serve the random head)
+Once a run dir exists, point `decisionmaker-serve` at its checkpoint. The serve
+entrypoint (`scripts/run_server.py`) loads the head from
+`DECISIONMAKER_HEAD_CHECKPOINT` (default `/app/runs/seed_ce/checkpoint.pt`); if that
+file is missing it serves a RANDOM-INT head and every answer is ~uniform
+probabilities — a silent failure that looks like a coin-flip. The env is set
+explicitly in `deploy/decisionmaker-serve.container`:
+
+```
+Environment=DECISIONMAKER_HEAD_CHECKPOINT=/app/runs/seed_ce/checkpoint.pt
+```
+
+After training a new arm, update that line, re-copy the quadlet, reload, restart:
+
+```bash
+cp deploy/decisionmaker-serve.container ~/.config/containers/systemd/
+systemctl --user daemon-reload && systemctl --user restart decisionmaker-serve
+journalctl --user -u decisionmaker-serve -b | grep "head loaded"
+```
+
+You should see `head loaded from /app/runs/seed_ce/checkpoint.pt`. If instead you
+see `WARNING: ... random-init head`, the checkpoint path is wrong — fix before
+trusting any answer. The repo mount is read-only (`:ro`) so the code change is
+live via restart; no image rebuild needed for a head/code change.
+
+## Troubleshooting GPU confusion
+When answers come back with `confidence` near 0 and every `probabilities` entry
+~equal (e.g. 0.499/0.501, 0.25×4), the head is random-init — check
+`journalctl` for the `WARNING ... random-init head` line first, before blaming
+training or the GPU. Only after that passes is it a genuine "model is unsure" signal.

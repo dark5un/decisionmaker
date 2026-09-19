@@ -31,6 +31,11 @@ AddDevice=nvidia.com/gpu=all
 # run_server.py maps that variable to CUDA_VISIBLE_DEVICES before importing torch.
 EnvironmentFile=%h/workspace/decisionmaker/deploy/gpu.env
 Environment=DECISIONMAKER_PORT=8090
+# WINNING HEAD (Phase B): soft targets, 30 epochs (360 steps) -> real logit margin
+# (choice pred-peak 0.35, score 0.71) while staying well-calibrated (test ECE 0.063,
+# ood 0.045). Beats seed_ce (flat, 36 steps) and seed_hard (hard targets: still flat
+# choice + ECE 0.198). Serve at T=1.0: the fitted 0.736 buys negligible NLL at worse ECE.
+Environment=DECISIONMAKER_HEAD_CHECKPOINT=/app/runs/seed_soft30/checkpoint.pt
 Environment=DECISIONMAKER_TEMPERATURE=1.0
 
 # Container runs as root (pytorch base); rootless podman maps container-root to

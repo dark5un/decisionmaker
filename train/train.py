@@ -49,6 +49,7 @@ class RunConfig:
     model: str = "Qwen/Qwen3-0.6B"
     revision: str = "c1899de289a04d12100db370d81485cdf75e47ca"
     loss: str = "ce"                       # ce | brier | paired
+    target: str = "soft"                   # "soft" = CE vs gold distribution; "hard" = CE vs one-hot(argmax gold)
     finetune: bool = False                 # head-only unless --finetune
     epochs: int = 3
     lr: float = 3e-4
@@ -94,6 +95,20 @@ def gold_vector(qtype: str, criteria, gold: dict) -> list:
     else:  # boolean -> (false, true)
         order = ["false", "true"]
     return [float(gold[k]) for k in order]
+
+
+def target_vector(gold_vec: list, target: str) -> list:
+    """Training target per question. 'soft' = the gold distribution itself (current
+    behavior, equivalent to heavy label smoothing -> calibrated but flat). 'hard' =
+    one-hot on the gold argmax -- the recipe that builds real logit margin and that
+    the temp-scaling literature says calibrates best AFTER post-hoc sharpening."""
+    if target == "soft":
+        return gold_vec
+    if target == "hard":
+        v = [0.0] * len(gold_vec)
+        v[int(max(range(len(gold_vec)), key=lambda i: gold_vec[i]))] = 1.0
+        return v
+    raise ValueError(f"unknown target {target!r} (expected soft|hard)")
 
 
 def leaf_count_for_question(qtype: str) -> int:
@@ -154,12 +169,13 @@ def build_leaf_texts_question(row, qid):
 class _Batch:
     """One packed forward's tensors + per-group bookkeeping."""
 
-    __slots__ = ("tokens", "attention", "lengths", "types", "gold_vecs", "labels")
+    __slots__ = ("tokens", "attention", "lengths", "types", "gold_vecs", "target_vecs", "labels")
 
-    def __init__(self, tokens, attention, lengths, types, gold_vecs, labels):
+    def __init__(self, tokens, attention, lengths, types, gold_vecs, target_vecs, labels):
         self.tokens, self.attention, self.lengths = tokens, attention, lengths
         self.types = types                  # ["choice"|"score"|"boolean"] per group
         self.gold_vecs = gold_vecs           # gold vector per group
+        self.target_vecs = target_vecs       # training target vector per group (soft|hard)
         self.labels = labels                 # boolean 0/1 observed outcome per group (or None)
 
 
@@ -175,7 +191,7 @@ def _pack_batch(rows_batch, tok, cfg, rng) -> _Batch:
     # the same device by reading an env hint set by the run. Default cuda.
     device = torch.device("cuda")
 
-    paths, types, gold_vecs, labels = [], [], [], []
+    paths, types, gold_vecs, target_vecs, labels = [], [], [], [], []
     for r in rows_batch:
         for qid, q in r["questions"].items():
             leaves = build_leaf_texts_question(r, qid)
@@ -188,7 +204,9 @@ def _pack_batch(rows_batch, tok, cfg, rng) -> _Batch:
                     )
                 paths.append(toks)
             types.append(q["type"])
-            gold_vecs.append(gold_vector(q["type"], q.get("criteria"), r["gold_probs"][qid]))
+            gv = gold_vector(q["type"], q.get("criteria"), r["gold_probs"][qid])
+            gold_vecs.append(gv)
+            target_vecs.append(target_vector(gv, cfg.target))
             if q["type"] == "boolean":
                 labels.append(int(r.get("gold_label", {}).get(qid, 1.0) >= 0.5))
             else:
@@ -201,7 +219,7 @@ def _pack_batch(rows_batch, tok, cfg, rng) -> _Batch:
     for i, p in enumerate(paths):
         tokens[i, : len(p)] = torch.tensor(p, dtype=torch.long, device=device)
     attention = torch.arange(width, device=device)[None, :] < lengths[:, None]
-    return _Batch(tokens, attention, lengths, types, gold_vecs, labels)
+    return _Batch(tokens, attention, lengths, types, gold_vecs, target_vecs, labels)
 
 
 def _group_logits(model, batch: _Batch, dev) -> list:
@@ -275,11 +293,11 @@ def _train_step(model, opt, loss_fn, batch_rows, tok, cfg, rng, dev):
     opt.zero_grad()
     groups = _group_logits(model, batch, dev)
     total = torch.tensor(0.0, device=dev, requires_grad=True)
-    for g, gold in zip(groups, batch.gold_vecs):
+    for g, tgt in zip(groups, batch.target_vecs):
         if cfg.loss == "paired":
-            total = total + loss_paired(g, gold, rng, cfg.paired_m, cfg.paired_trials)
+            total = total + loss_paired(g, tgt, rng, cfg.paired_m, cfg.paired_trials)
         else:
-            total = total + loss_fn(g, gold)
+            total = total + loss_fn(g, tgt)
     total.backward()
     opt.step()
     return float(total.item())
@@ -406,6 +424,9 @@ def main() -> int:
     ap.add_argument("--data", default="data/seed.jsonl")
     ap.add_argument("--run-dir", default="runs/seed_ce")
     ap.add_argument("--loss", choices=["ce", "brier", "paired"], default="ce")
+    ap.add_argument("--target", choices=["soft", "hard"], default="soft",
+                    help="CE target: 'soft'=gold distribution (calibrated but flat); "
+                         "'hard'=one-hot on gold argmax (builds logit margin; pair with temp scaling)")
     ap.add_argument("--finetune", action="store_true")
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--lr", type=float, default=3e-4)
@@ -431,7 +452,7 @@ def main() -> int:
     print(f"loaded {len(rows)} rows; splits: { {k: len(v) for k, v in splits.items()} }")
 
     cfg = RunConfig(
-        loss=args.loss, finetune=args.finetune, epochs=args.epochs, lr=args.lr,
+        loss=args.loss, target=args.target, finetune=args.finetune, epochs=args.epochs, lr=args.lr,
         batch_candidates=args.batch_candidates, ece_threshold=args.ece_threshold,
         seed=args.seed, paired_m=args.paired_m, paired_trials=args.paired_trials,
         run_dir=args.run_dir, data_sha256=data_sha256(data_path),

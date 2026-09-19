@@ -46,11 +46,18 @@ DecisionHead/Model), `server/src/app.py` (FastAPI), `spec/openapi.yaml`,
 - **Phase 4 service** — DONE (LIVE). /health 200; every fixture sums-to-1; 7 invalid→422;
   malformed→400; warm ~24ms. Service is UP at 127.0.0.1:8090.
 - **Phase 5 train/calibration** — DONE (ran live on the RTX 5090). Head-only fine-tune
-  (backbone frozen + bf16; fp32 full-graph OOM'd ~8 GiB — fix in `train/train.py`). Three
-  arms on `data/seed.jsonl`: CE (0.0261/0.0424), Brier (0.0002/0.0147), paired (0.0436/0.0247),
-  ALL ECE-gate PASS. Brier strongest; paired does NOT beat CE on test (honest). See
-  `docs/CALIBRATION.md`. Real run artifacts in `runs/seed_{ce,brier,paired}/` (gitignored).
-  `train/train.py` gets `--loss {ce|brier|paired}` and `--run-dir`; rerun via the quadlet.
+  (backbone frozen + bf16; fp32 full-graph OOM'd ~8 GiB — fix in `train/train.py`). Arms
+  run on `data/seed.jsonl`: three heads on disk — `runs/seed_ce` (flat; 3 epochs /
+  36 steps, the ORIGINAL arm), `runs/seed_hard`
+  (hard-target CE — FAILED: choice still ~0.27, boolean test ECE 0.198~gate), and
+  `runs/seed_soft30` (the WINNER: soft targets, 30 epochs / 360 steps -> choice
+  pred-peak 0.35 [ceiling 0.456], score 0.71 [ceiling 0.743], test ECE 0.063 /
+  ood 0.045). The winner's flatness, when real, is the DATA ceiling (gold is
+  itself soft), not a bug. Serve uses `runs/seed_soft30/checkpoint.pt` @ T=1.0
+  (the fitted 0.736 adds no NLL worth the ECE cost). Post-hoc temp sharpening is
+  NOT a fix for soft-target flatness (moves NLL but explodes boolean ECE) — the
+  lever is EPOCHS (underfit: 36 steps) and only then caliberation-gated. See
+  `docs/CALIBRATION.md` and the podman-quadlet-deploy skill.
 - **Phase 6 Go SDK** — DONE. `sdk/go/{decisionmaker,client,decision}.go` real typed client
   (Choice/Boolean/Score request/response, probabilistic maps, typed spec errors with
   `errors.Is`, context transport, `Answer.Decide(threshold)` gate). `probe.go` removed.
