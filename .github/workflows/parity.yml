@@ -1,0 +1,35 @@
+name: Parity (cross-language golden)
+
+# Cross-language golden parity gate (`make parity`): for every request fixture,
+# a curl'ed answer must equal the Go client's and the Rust client's (identical
+# per-qid distributions + rejections, sums-to-1).
+#
+# This is DISPATCH-ONLY and is never part of the default CI gate because it
+# needs a live decisionmaker service (GPU + a trained head) reachable from the
+# runner. Point it at a service with the `DECISIONMAKER_BASE_URL` repo/org
+# variable, or pass `base_url` when you dispatch. Default: http://127.0.0.1:8090
+# (which will only work on a self-hosted runner where the service is running).
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL of a running decisionmaker service (defaults to the DECISIONMAKER_BASE_URL variable, else http://127.0.0.1:8090)"
+        required: false
+        default: ""
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run parity
+        run: python scripts/parity_golden.py --base "$BASE"
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url }}
+          DECISIONMAKER_BASE_URL: ${{ vars.DECISIONMAKER_BASE_URL }}
+          BASE: ${{ (github.event.inputs.base_url != '' && github.event.inputs.base_url) || vars.DECISIONMAKER_BASE_URL || 'http://127.0.0.1:8090' }}
