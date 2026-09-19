@@ -1,0 +1,18 @@
+repos:
+  - repo: local
+    hooks:
+      - id: gold-compiler-lint
+        name: gold compiler lint (py_compile + --help)
+        entry: python scripts/gold_compiler_ci.py lint
+        language: system
+        always_run: true
+      - id: gold-compiler-verify-corpus
+        name: verify gold compiler corpus (all tables verified)
+        entry: python scripts/gold_compiler_ci.py verify-corpus
+        language: system
+        always_run: true
+      - id: gold-compiler-determinism
+        name: gold compiler determinism (double-run byte-identical)
+        entry: python scripts/gold_compiler_ci.py determinism
+        language: system
+        always_run: true

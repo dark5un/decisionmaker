@@ -6,7 +6,8 @@ PY    := .venv/bin/python
 POD   := podman
 
 .PHONY: help test unit contract parity go rust lint bench serve-up serve-down serve-restart \
-        seed verify-seed build-image clean
+        seed verify-seed build-image clean \
+        gold-compiler-lint gold-compiler-verify-corpus gold-compiler-determinism gold-compiler
 
 help:
 	@echo "targets:"
@@ -67,3 +68,16 @@ build-image:
 
 clean: serve-down
 	cd sdk/rust && cargo clean
+
+# ---- Gold Compiler (plan 05 / 06) CI gates ----
+gold-compiler-lint:
+	$(PY) scripts/gold_compiler_ci.py lint
+
+gold-compiler-verify-corpus:
+	$(PY) scripts/gold_compiler_ci.py verify-corpus
+
+gold-compiler-determinism:
+	$(PY) scripts/gold_compiler_ci.py determinism
+
+gold-compiler:
+	$(PY) scripts/gold_compiler_ci.py all
