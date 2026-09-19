@@ -132,6 +132,8 @@ The `docs/` directory is the deep reference:
 - [data.md](docs/DATA.md) — JSONL row schema, the seed generator, split hygiene.
 - [calibration.md](docs/CALIBRATION.md) — real ECE/Brier results on the seed set.
 - [deploy.md](docs/DEPLOY.md) — Podman Quadlet install, GPU pinning, ops, troubleshooting.
+- [GOLD_COMPILER.md](docs/GOLD_COMPILER.md) — the Gold Compiler: raw prose → verified
+  → exact-gold training data (plans 05 + 06), no teacher LLM.
 - [AGENTS.md](docs/AGENTS.md) — verified state of every phase, written for a
   fresh developer.
 
@@ -194,6 +196,34 @@ decides the exit code: `0` pass, `2` fail.
 
 ---
 
+## The Gold Compiler (raw prose → exact-gold training data)
+
+The engine is only as honest as the gold you train it on, and real gold is
+expensive. `scripts/gold_compiler.py` compiles a decision-dense document (a
+SKILL.md, a policy, a runbook) into calibrated training rows **without a teacher
+LLM as the source of truth** — extract → verify → synthesize → probe:
+
+- **extract** reads prose and emits *candidate* rules (recall-first, never trusted);
+- **verify** is the anti-hallucination wall — every rule's fields resolve in the
+  schema, every outcome is a real criteria member, and a deterministic rule
+  interpreter checks each rule against hand-marked anchor states (no model
+  judges; the only human step is marking a few trigger states per rule);
+- **synthesize** enumerates the state space, runs the interpreter, and *computes*
+  the soft gold — byte-deterministic double-runs (`data_sha256`);
+- **probe** runs the skill's own commands read-only as a referee, flagging any
+  rule whose prediction disagrees with the measured world.
+
+`scripts/history_to_gold.py` is the plan-06 example gold-loader: empirical
+outcome gold measured from a historical log (pluggable source — swap the loader,
+keep the harness). Full details and honest limits in `docs/GOLD_COMPILER.md`.
+
+```bash
+make gold-compiler           # lint + verify-corpus (all tables verified) + determinism
+scripts/gold_compiler.py --input corpus --out research/data/gold_compiler
+```
+
+---
+
 ## GPU assignment
 
 GPUs are assigned by **UUID** in [`deploy/gpu.env`](deploy/gpu.env) (the single
@@ -231,6 +261,7 @@ make serve-down     # stop it
 make serve-restart   # restart it
 make seed            # regenerate synthetic seed data
 make verify-seed     # oracle ECE baseline on the seed
+make gold-compiler   # gold compiler gates: lint + verify-corpus + determinism
 ```
 
 Repo layout:
@@ -240,7 +271,10 @@ server/src/          engine (pure, torch-free core) + torch head + FastAPI app
 spec/openapi.yaml    wire contract (source of truth)
 sdk/go, sdk/rust     typed clients + parity CLI examples
 train/               seed generator, loss arms, ECE harness, training entrypoint
-scripts/             spec validator, GPU verifier, benchmark, parity harness
+scripts/             spec validator, GPU verifier, benchmark, parity harness,
+                     gold compiler CLI + CI + history gold-loader
+research/compiler/   gold compiler: corpus tables, anchors, core engine, renderers
+research/data/       committed research outputs incl. gold_compiler/ train rows
 deploy/              Containerfile, quadlets (serve + train), gpu.env, network
 tests/               engine tests + request/response fixtures
 docs/                the deep reference
