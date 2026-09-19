@@ -1,0 +1,5 @@
+{"decision": "gpu-cdi-presence", "observed": {"o1": true, "o2": true}, "probe": "gpu-cdi-presence", "skill": "podman-quadlet-deploy", "state": {"cdi_yaml_absent": false, "nvidia_ctk_present": true}, "winner": "ok"}
+{"decision": "gpu-uuid-pinning", "observed": {"o1": false, "o2": 2}, "probe": "gpu-uuid-pinning", "skill": "podman-quadlet-deploy", "state": {"cdi_stale": false, "uuid_pinned_cuda": true}, "winner": "none"}
+{"decision": "rootless-podman-broken", "observed": {"o1": true, "o2": "true"}, "probe": "rootless-podman-broken", "skill": "podman-quadlet-deploy", "state": {"newuidmap_setuid": true, "rootless_info": "true"}, "winner": "ok"}
+{"decision": "idle-pipeline-running", "observed": {"o1": true, "o2": true}, "probe": "idle-pipeline-running", "skill": "ryoku-desktop-ops", "state": {"hypridle_running": true, "is_desktop": true}, "winner": "ryoku_idle_start"}
+{"decision": "dpms-wake-keys", "observed": {"o1": false, "o2": false}, "probe": "dpms-wake-keys", "skill": "ryoku-desktop-ops", "state": {"dpms_wake_keys_true": false}, "winner": "true"}
