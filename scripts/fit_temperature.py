@@ -139,12 +139,25 @@ def main() -> int:
 
     def ece(temp: float) -> float:
         """Boolean-only ECE on calibration split (real labels exist only for boolean)."""
+        # Discover the boolean question id dynamically (not hardcoded 'islead'),
+        # so this works for any plan's schema.
+        bobool = None
+        for r in cal:
+            for qid, q in r["questions"].items():
+                if q["type"] == "boolean":
+                    bobool = qid
+                    break
+            if bobool:
+                break
+        if bobool is None:
+            print("no boolean question in calibration split; boolean ECE skipped")
+            return float("nan")
         bin_edges = np.linspace(0, 1, 11)
         confs, accs = [], []
         with torch.no_grad():
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 for r in cal:
-                    leaves = T.build_leaf_texts_question(r, "islead")
+                    leaves = T.build_leaf_texts_question(r, bobool)
                     toks = [tokenize(x) for x in leaves]
                     width = max(len(x) for x in toks)
                     t = torch.full((len(toks), width), tok.pad_token_id, dtype=torch.long, device="cuda")
@@ -154,7 +167,7 @@ def main() -> int:
                     attn = torch.arange(width, device="cuda")[None, :] < lens[:, None]
                     z = float(np.atleast_1d(model(t, attn, lens).squeeze(-1).item())[0])
                     p = 1.0 / (1.0 + math.exp(-z / temp))
-                    confs.append(p); accs.append(float(r["gold_label"]["islead"] >= 0.5))
+                    confs.append(p); accs.append(float(r["gold_label"][bobool] >= 0.5))
         confs, accs = np.array(confs), np.array(accs)
         s = 0.0
         for lo, hi in zip(bin_edges[:-1], bin_edges[1:]):
