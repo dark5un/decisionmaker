@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use decisionmaker::{
-    Action, Answer, ApiError, ChoiceQuestion, Error, Health, BooleanCriteria, Question, Request,
+    Action, Answer, ApiError, BooleanCriteria, ChoiceQuestion, Error, Health, Question, Request,
     ScoreQuestion, State,
 };
 

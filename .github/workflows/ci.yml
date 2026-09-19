@@ -1,0 +1,70 @@
+name: CI
+
+# Main test gate. Runs the full runnable surface on every push to master and on
+# every pull request. What this covers (all CPU-only, no live service needed):
+#   - make unit   (OpenAPI spec + fixture contract gate, then pytest)
+#   - make go     (Go SDK tests; live-parity tests self-skip without a server)
+#   - make rust   (Rust SDK tests via cargo --all-features; live tests self-skip)
+#   - make gold-compiler (lint + verify-corpus + determinism)
+# Plus Go/Rust format + vet gates.
+#
+# NOT here: `make parity` (cross-language golden parity) is a separate,
+# manually-dispatched workflow because it needs a live decisionmaker service
+# (GPU + trained head). See parity.yml.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  python:
+    name: Python (unit + spec + gold-compiler)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Install dev deps (frozen from uv.lock)
+        run: uv sync --extra dev --frozen
+      - name: Spec contract + unit tests (make unit)
+        run: make unit
+      - name: Gold-compiler gates (lint + verify-corpus + determinism)
+        run: make gold-compiler
+
+  go:
+    name: Go (tests + format + vet)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - name: Tests
+        run: go test ./...
+      - name: Format
+        run: gofmt -l .
+      - name: Vet
+        run: go vet ./...
+
+  rust:
+    name: Rust (tests + fmt + clippy, all features)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Tests
+        run: cargo test --all-features
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-features
