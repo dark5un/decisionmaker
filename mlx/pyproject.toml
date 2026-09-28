@@ -1,0 +1,11 @@
+[project]
+name = "decisionmaker-mlx"
+version = "0.1.0"
+description = "Decision-Maker candidate-leaf engine on Apple MLX (spike)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "mlx>=0.32.2",
+    "mlx-lm>=0.31.3",
+    "uvicorn[standard]>=0.54.0",
+]
